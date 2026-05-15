@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with game stats",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "totalDistance": { "type": "number" },
+        "coins": { "type": "number" },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "inventory": { "type": "array", "items": { "type": "string" } },
+        "equippedItems": { "type": "array", "items": { "type": "string" } },
+        "currentTeamId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid"]
+    },
+    "Quest": {
+      "title": "Daily Quest",
+      "description": "A daily challenge for the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["physical", "conquest"] },
+        "description": { "type": "string" },
+        "targetValue": { "type": "number" },
+        "currentValue": { "type": "number" },
+        "rewardCoins": { "type": "number" },
+        "rewardXP": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "claimed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "description", "targetValue", "status"]
+    },
+    "Territory": {
+      "title": "Claimed Territory",
+      "description": "A captured hex tile on the map",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerPhotoURL": { "type": "string" },
+        "teamId": { "type": "string" },
+        "color": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "lastClaimedAt": { "type": "string", "format": "date-time" },
+        "level": { "type": "number" },
+        "defense": { "type": "number" },
+        "resources": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "lat", "lng", "lastClaimedAt"]
+    },
+    "CapturedPolygon": {
+      "title": "Captured Area",
+      "description": "A customized polygon area captured by a player forming a closed loop",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lat": { "type": "number" },
+              "lng": { "type": "number" }
+            }
+          }
+        },
+        "area": { "type": "number" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "color": { "type": "string" }
+      },
+      "required": ["ownerId", "points", "area", "capturedAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "users/{userId}/dailyQuests": {
+      "schema": "Quest",
+      "description": "User specific daily challenges"
+    },
+    "territories": {
+      "schema": "Territory",
+      "description": "Captured hex tiles (Legacy)"
+    },
+    "polygons": {
+      "schema": "CapturedPolygon",
+      "description": "Custom polygon territories"
+    }
+  }
+}

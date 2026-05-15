@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- VALIDATION HELPERS ---
+
+    function isValidUser(data) {
+      return data.uid is string && 
+             data.uid == request.auth.uid &&
+             (data.get('displayName', '') is string && data.get('displayName', '').size() <= 100) &&
+             (data.get('username', '') is string && data.get('username', '').size() <= 100) &&
+             (data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 500) &&
+             (data.get('totalDistance', 0) is number) &&
+             (data.get('totalTime', 0) is number) &&
+             (data.get('coins', 0) is number) &&
+             (data.get('xp', 0) is number) &&
+             (data.get('level', 1) is number) &&
+             (data.get('ownedTerritoryCount', 0) is number) &&
+             (data.get('inventory', []) is list) &&
+             (data.get('equippedItems', []) is list) &&
+             (data.get('equippedItems', []).size() <= 50);
+    }
+
+    function isValidTerritory(data) {
+      return data.ownerId is string && 
+             data.ownerId == request.auth.uid &&
+             data.lat is number &&
+             data.lng is number &&
+             (data.get('ownerName', '') is string) &&
+             (data.get('ownerPhotoURL', '') is string) &&
+             (data.get('teamId', null) == null || data.get('teamId', '') is string) &&
+             (data.get('color', null) == null || data.get('color', '') is string) &&
+             (data.get('level', 1) is number) &&
+             (data.get('defense', 0) is number) &&
+             (data.get('resources', 0) is number);
+    }
+
+    function isValidQuest(data) {
+      return data.id is string &&
+             data.type is string &&
+             data.status in ['active', 'completed', 'claimed'] &&
+             data.get('currentValue', 0) is number;
+    }
+
+    function isValidPolygon(data) {
+      return data.ownerId is string && 
+             data.ownerId == request.auth.uid &&
+             data.points is list &&
+             data.points.size() >= 3 &&
+             data.area is number &&
+             (data.get('ownerName', '') is string) &&
+             (data.get('color', null) == null || data.get('color', '') is string);
+    }
+
+    // --- MATCH BLOCKS ---
+
+    // USERS
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isOwner(userId) && 
+        isValidUser(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        incoming().keys().hasAll(['uid', 'createdAt', 'updatedAt']);
+
+      allow update: if isOwner(userId) && 
+        isValidUser(incoming()) &&
+        incoming().updatedAt == request.time &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        // Protect sensitive fields or allow specific updates
+        (
+          // Action: Profile Update
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'photoURL', 'updatedAt']) ||
+          // Action: Stat Update (XP / Level / Coins)
+          incoming().diff(existing()).affectedKeys().hasOnly(['xp', 'level', 'coins', 'totalDistance', 'totalTime', 'updatedAt']) ||
+          // Action: Inventory Update
+          incoming().diff(existing()).affectedKeys().hasOnly(['inventory', 'coins', 'updatedAt']) ||
+          // Action: Equip Update
+          incoming().diff(existing()).affectedKeys().hasOnly(['equippedItems', 'updatedAt']) ||
+          // Action: Conquest Rewards (Multiple stats + count)
+          incoming().diff(existing()).affectedKeys().hasOnly(['ownedTerritoryCount', 'xp', 'coins', 'updatedAt']) ||
+          // Action: Territory Count Update
+          incoming().diff(existing()).affectedKeys().hasOnly(['ownedTerritoryCount', 'updatedAt'])
+        );
+    }
+
+    // TERRITORIES
+    match /territories/{tileId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && 
+        isValidId(tileId) &&
+        isValidTerritory(incoming()) &&
+        incoming().lastClaimedAt == request.time;
+      allow update: if isSignedIn() &&
+        isValidId(tileId) &&
+        isOwner(existing().ownerId) &&
+        isValidTerritory(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().lat == existing().lat &&
+        incoming().lng == existing().lng &&
+        incoming().lastClaimedAt == existing().lastClaimedAt &&
+        (
+          // Action: Upgrade
+          incoming().diff(existing()).affectedKeys().hasOnly(['level', 'defense', 'resources', 'updatedAt'])
+        );
+    }
+
+    // POLYGONS
+    match /polygons/{polygonId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && 
+        isValidId(polygonId) &&
+        isValidPolygon(incoming()) &&
+        incoming().capturedAt == request.time;
+      allow delete: if isSignedIn() && isOwner(existing().ownerId);
+    }
+
+    // DAILY QUESTS
+    match /users/{userId}/dailyQuests/{questId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidQuest(incoming());
+      allow update: if isOwner(userId) && 
+                    isValidQuest(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['currentValue', 'status', 'updatedAt']);
+    }
+
+    // TEAMS
+    match /teams/{teamId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(teamId);
+      allow update: if isSignedIn() && 
+                    (request.auth.uid in resource.data.members || request.auth.uid in incoming().members);
+    }
+
+    // FRIEND REQUESTS
+    match /friendRequests/{requestId} {
+      allow read: if isSignedIn() && (request.auth.uid == existing().fromUserId || request.auth.uid == existing().toUserId);
+      allow create: if isSignedIn() && 
+                    incoming().fromUserId == request.auth.uid &&
+                    incoming().status == 'pending';
+      allow update: if isSignedIn() && 
+                    (request.auth.uid == existing().toUserId && 
+                     incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']));
+    }
+  }
+}

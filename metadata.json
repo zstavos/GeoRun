@@ -1,0 +1,6 @@
+{
+  "name": "GeoRun: Territory Conquest",
+  "description": "A gamified fitness app where you claim real-world territories by running. Challenge friends, climb leaderboards, and build your empire.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}
